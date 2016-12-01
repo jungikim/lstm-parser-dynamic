@@ -1,6 +1,7 @@
 #ifndef CNN_TRAINING_H_
 #define CNN_TRAINING_H_
 
+#include <iostream>
 #include <vector>
 #include "cnn/model.h"
 #include "cnn/shadow-params.h"
