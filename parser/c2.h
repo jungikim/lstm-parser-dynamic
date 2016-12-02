@@ -1,6 +1,7 @@
 #ifndef CPYPDICT_H_
 #define CPYPDICT_H_
 
+#include <cstdlib>
 #include <string>
 #include <iostream>
 #include <cassert>
@@ -15,6 +16,8 @@
 #include <string>
 
 #include <boost/algorithm/string.hpp>
+
+using namespace std;
 
 namespace cpyp
 {
@@ -34,17 +37,17 @@ namespace cpyp
   class Corpus
   {
     public:
-      std::vector<std::vector<unsigned>> sentences;
-      std::vector<std::vector<unsigned>> sentencesPos;
-      std::vector<std::map<int, int>> sentencesHead;
-      std::vector<std::map<int, std::string>> sentencesDeprel;
+      vector<vector<unsigned>> sentences;
+      vector<vector<unsigned>> sentencesPos;
+      vector<map<int, int>> sentencesHead;
+      vector<map<int, string>> sentencesDeprel;
       unsigned nsentences;
 
-      std::vector<std::vector<unsigned>> sentencesDev;
-      std::vector<std::vector<std::string>> sentencesStrDev;
-      std::vector<std::vector<unsigned>> sentencesPosDev;
-      std::vector<std::map<int, int>> sentencesHeadDev;
-      std::vector<std::map<int, std::string>> sentencesDeprelDev;
+      vector<vector<unsigned>> sentencesDev;
+      vector<vector<string>> sentencesStrDev;
+      vector<vector<unsigned>> sentencesPosDev;
+      vector<map<int, int>> sentencesHeadDev;
+      vector<map<int, string>> sentencesDeprelDev;
       unsigned nsentencesDev;
 
       unsigned nwords;
@@ -53,21 +56,21 @@ namespace cpyp
       unsigned nchars;
       unsigned nactions;
 
-      std::map<std::string, unsigned> wordsToInt;
-      std::map<unsigned, std::string> intToWords;
+      map<string, unsigned> wordsToInt;
+      map<unsigned, string> intToWords;
 
-      std::map<std::string, unsigned> posToInt;
-      std::map<unsigned, std::string> intToPos;
+      map<string, unsigned> posToInt;
+      map<unsigned, string> intToPos;
 
-      std::map<std::string, unsigned> deprelToInt;
-      std::map<unsigned, std::string> intToDeprel;
+      map<string, unsigned> deprelToInt;
+      map<unsigned, string> intToDeprel;
 
       bool USE_SPELLING = false;
-      std::map<std::string, unsigned> charsToInt;
-      std::map<unsigned, std::string> intToChars;
+      map<string, unsigned> charsToInt;
+      map<unsigned, string> intToChars;
 
-      std::vector<std::string> actions;
-      std::map<std::string, int> ractions;
+      vector<string> actions;
+      map<string, int> ractions;
 
       // String literals
       static constexpr const char* UNK = "UNK";
@@ -81,14 +84,14 @@ namespace cpyp
         nactions=0;
         nchars=1;
 
-        _add(wordToInt, intToWords, Corpus::BAD0, nwords);
-        _add(wordToInt, intToWords, Corpus::UNK, nwords);
+        _add(wordsToInt, intToWords, Corpus::BAD0, nwords);
+        _add(wordsToInt, intToWords, Corpus::UNK, nwords);
 
         _add(charsToInt, intToChars, "UNK", nchars);
         _add(charsToInt, intToChars, "BAD0", nchars);
       }
 
-      inline unsigned UTF8Len(unsigned char x)
+      static inline unsigned UTF8Len(unsigned char x)
       {
         if (x < 0x80)
           return 1;
@@ -106,37 +109,37 @@ namespace cpyp
           return 0;
       }
 
-      void load_train(const std::string &file, const std::string &actionsFile){
+      void load_train(const string &file, const string &actionsFile){
         _load(file, sentences, nullptr, sentencesPos, sentencesHead, sentencesDeprel);
         nsentences = sentences.size();
-        std::cerr << "done" << "\n";
+        cerr << "done" << "\n";
 
         _loadActions(actionsFile, actions, ractions);
-        for (auto a : actions)
-        {
-          std::cerr << a << std::endl;
-        }
+        // for (auto a : actions)
+        // {
+        //   cerr << a << endl;
+        // }
         nactions = actions.size();
-        std::cerr << "nactions:" << nactions << std::endl;
-        std::cerr << "nwords:" << nwords << std::endl;
+        cerr << "nactions:" << nactions << endl;
+        cerr << "nwords:" << nwords << endl;
         for (unsigned i = 0; i < npos; i++)
         {
-          std::cerr << i << ":" << intToPos[i] << std::endl;
+          cerr << i << ":" << intToPos[i] << endl;
         } 
       }
 
-      void load_dev(const std::string &file){
-        _load(file, sentencesDev, sentencesStrDev, sentencesPosDev, sentencesHeadDev, sentencesDeprelDev);
+      void load_dev(const string &file){
+        _load(file, sentencesDev, &sentencesStrDev, sentencesPosDev, sentencesHeadDev, sentencesDeprelDev);
         nsentencesDev = sentencesDev.size();
       }
 
-      inline unsigned get_or_add_word(const std::string& word){
+      inline unsigned get_or_add_word(const string& word){
         _add(wordsToInt, intToWords, word, nwords);
         return wordsToInt[word];
       }
 
     private:
-      static bool _add(std::map<std::string, unsigned> &toInt, std::map<unsigned, std::string> &fromInt, const std::string &s, int &n){
+      bool _add(map<string, unsigned> &toInt, map<unsigned, string> &fromInt, const string &s, unsigned &n){
         if(toInt.find(s)==toInt.end()){
           toInt[s] = n;
           fromInt[n] = s;
@@ -146,32 +149,33 @@ namespace cpyp
         return false;
       }
 
-      static void _load(std::string file,
-                  std::map<int, std::vector<unsigned>> &sentences,
-                  std::map<int, std::vector<unsigned>> *sentencesStr,
-                  std::map<int, std::vector<unsigned>> &sentencesPos,
-                  std::map<int, std::map<int,int>> &sentencesHead,
-                  std::map<int, std::map<int,std::string>> &sentencesDeprel
+      void _load(string file,
+                  vector<vector<unsigned>> &sentences,
+                  vector<vector<string>> *sentencesStr,
+                  vector<vector<unsigned>> &sentencesPos,
+                  vector<map<int,int>> &sentencesHead,
+                  vector<map<int,string>> &sentencesDeprel
                 ){
 
         sentences.clear();
-        if(sentencesStr){sentenceStr->clear();}
+        if(sentencesStr){sentencesStr->clear();}
         sentencesPos.clear();
         sentencesHead.clear();
         sentencesDeprel.clear();
 
-        std::ifstream inF(file);
-        std::string line;
-        std::vector<unsigned> current_sent;
-        std::vector<unsigned> current_sent_str;
-        std::vector<unsigned> current_sent_pos;
-        std::map<int,int> current_sent_head;
-        std::map<int,std::string> current_sent_deprel;
-        while(std::getline(inF, line)){
-          std::vector<std::string> tokens;
+        ifstream inF(file);
+        string line;
+        vector<unsigned> current_sent;
+        vector<string> current_sent_str;
+        vector<unsigned> current_sent_pos;
+        map<int,int> current_sent_head;
+        map<int,string> current_sent_deprel;
+        while(getline(inF, line)){
+          vector<string> tokens;
           boost::split(tokens, line, boost::is_any_of("\t"));
 
-          if(tokens.size()==0 && current_sent.size()>0){
+          if(line.length()==0){
+            if(current_sent.size()>0){
               sentences.push_back(current_sent);
               if(sentencesStr){sentencesStr->push_back(current_sent_str);}
               sentencesPos.push_back(current_sent_pos);
@@ -183,43 +187,44 @@ namespace cpyp
               current_sent_pos.clear();
               current_sent_head.clear();
               current_sent_deprel.clear();
-              continue;
+            }
+            continue;
           }
 
           if(tokens.size()!=10){
             continue;
           }
 
-          std::string idx = tokens[0];
-          std::string surface = tokens[1];
-//          std::string lemma = tokens[2];
-          std::string pos = tokens[3];
-//          std::string xpos = tokens[4];
-//          std::string features = tokens[5];
-          std::string head = tokens[6];
-          std::string deprel = tokens[7];
+          string idx = tokens[0];
+          string surface = tokens[1];
+//          string lemma = tokens[2];
+          string pos = tokens[3];
+//          string xpos = tokens[4];
+//          string features = tokens[5];
+          string head = tokens[6];
+          string deprel = tokens[7];
 
 
-          if (_add(wordToInt, intToWords, word, nwords)){
+          if (_add(wordsToInt, intToWords, surface, nwords)){
             //if new word, add to char map as well
             unsigned j = 0;
-            while (j < word.length()){
-              std::string wj = "";
-              for (unsigned h = j; h < j + UTF8Len(word[j]); h++){
-                wj += word[h];
+            while (j < surface.length()){
+              string wj = "";
+              for (unsigned h = j; h < j + UTF8Len(surface[j]); h++){
+                wj += surface[h];
               }
               _add(charsToInt, intToChars, wj, nchars);
-              j += UTF8Len(word[j]);
+              j += UTF8Len(surface[j]);
             }
           }
           _add(posToInt, intToPos, pos, npos);
           _add(deprelToInt, intToDeprel, deprel, ndeprel);
 
-          current_sent.push_back(wordToInt[surface]);
+          current_sent.push_back(wordsToInt[surface]);
           current_sent_str.push_back(surface);
           current_sent_pos.push_back(posToInt[pos]);
-          current_sent_head[std::atoi(idx)]=std::atoi(head);
-          current_sent_deprel.push_back(delrelToInt[deprel]);
+          current_sent_head[atoi(idx.c_str())-1]=atoi(head.c_str())-1;
+          current_sent_deprel[atoi(idx.c_str())-1]=deprelToInt[deprel];
         }
 
         if(current_sent.size()>0){
@@ -233,12 +238,12 @@ namespace cpyp
         inF.close();
       }
 
-      static void _loadActions(const std::string &file, std::vector<std::string> &actions, std::map<std::string, int> &ractions){
+      void _loadActions(const string &file, vector<string> &actions, map<string, int> &ractions){
         actions.clear();
         ractions.clear();
-        std::ifstream inF(file);
-        std::line;
-        while(std::getline(inF, line)){
+        ifstream inF(file);
+        string line;
+        while(getline(inF, line)){
           actions.push_back(line);
           ractions[line]=(actions.size()-1);
         }
