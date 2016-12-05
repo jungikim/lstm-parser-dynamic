@@ -14,60 +14,44 @@
 #include <map>
 #include <string>
 
-#include <boost/algorithm/string.hpp>
-
 namespace cpyp
 {
-  // class Token
-  // {
-  // public:
-  //   unsigned w;
-  //   unsigned pos;
-  //   int head;
-  //   unsigned deprel;
-
-  //   public Token(unsigned _w, unsigned _pos, int _head, unsigned _deprel)
-  //   : w(_w), pos(_pos), head(_head), deprel(_deprel)
-  //   {}
-  // };
-
   class Corpus
   {
     public:
-      std::vector<std::vector<unsigned>> sentences;
-      std::vector<std::vector<unsigned>> sentencesPos;
-      std::vector<std::map<int, int>> sentencesHead;
-      std::vector<std::map<int, std::string>> sentencesDeprel;
-      unsigned nsentences;
+      bool USE_SPELLING = false;
 
-      std::vector<std::vector<unsigned>> sentencesDev;
-      std::vector<std::vector<std::string>> sentencesStrDev;
-      std::vector<std::vector<unsigned>> sentencesPosDev;
-      std::vector<std::map<int, int>> sentencesHeadDev;
-      std::vector<std::map<int, std::string>> sentencesDeprelDev;
+      std::map<int, std::vector<unsigned>> correct_act_sent;
+      std::map<int, std::vector<unsigned>> sentences;
+      std::map<int, std::vector<unsigned>> sentencesPos;
+
+      std::map<int, std::vector<unsigned>> correct_act_sentDev;
+      std::map<int, std::vector<unsigned>> sentencesDev;
+      std::map<int, std::vector<unsigned>> sentencesPosDev;
+      std::map<int, std::vector<std::string>> sentencesStrDev;
       unsigned nsentencesDev;
 
+      unsigned nsentences;
       unsigned nwords;
-      unsigned npos;
-      unsigned ndeprel;
-      unsigned nchars;
       unsigned nactions;
+      unsigned npos;
+
+      unsigned nsentencestest;
+      unsigned nsentencesdev;
+      int max;
+      int maxPos;
 
       std::map<std::string, unsigned> wordsToInt;
       std::map<unsigned, std::string> intToWords;
+      std::vector<std::string> actions;
+      std::map<std::string, int> ractions; // reverse map: strings to ids
 
       std::map<std::string, unsigned> posToInt;
       std::map<unsigned, std::string> intToPos;
 
-      std::map<std::string, unsigned> deprelToInt;
-      std::map<unsigned, std::string> intToDeprel;
-
-      bool USE_SPELLING = false;
+      int maxChars;
       std::map<std::string, unsigned> charsToInt;
       std::map<unsigned, std::string> intToChars;
-
-      std::vector<std::string> actions;
-      std::map<std::string, int> ractions;
 
       // String literals
       static constexpr const char* UNK = "UNK";
@@ -75,17 +59,9 @@ namespace cpyp
 
       Corpus()
       {
-        nwords=0;
-        npos=0;
-        ndeprel=0;
-        nactions=0;
-        nchars=1;
-
-        _add(wordToInt, intToWords, Corpus::BAD0, nwords);
-        _add(wordToInt, intToWords, Corpus::UNK, nwords);
-
-        _add(charsToInt, intToChars, "UNK", nchars);
-        _add(charsToInt, intToChars, "BAD0", nchars);
+        max = 0;
+        maxPos = 0;
+        maxChars = 0; //Miguel
       }
 
       inline unsigned UTF8Len(unsigned char x)
@@ -106,145 +82,340 @@ namespace cpyp
           return 0;
       }
 
-      void load_train(const std::string &file, const std::string &actionsFile){
-        _load(file, sentences, nullptr, sentencesPos, sentencesHead, sentencesDeprel);
-        nsentences = sentences.size();
-        std::cerr << "done" << "\n";
+      inline void load_correct_actions(std::string file)
+      {
 
-        _loadActions(actionsFile, actions, ractions);
+        std::ifstream actionsFile(file);
+        std::string lineS;
+
+        int count = -1;
+        int sentence = -1;
+        bool initial = false;
+        bool first = true;
+        wordsToInt[Corpus::BAD0] = 0;
+        intToWords[0] = Corpus::BAD0;
+        wordsToInt[Corpus::UNK] = 1; // unknown symbol
+        intToWords[1] = Corpus::UNK;
+        assert(max == 0);
+        assert(maxPos == 0);
+        max = 2;
+        maxPos = 1;
+
+        charsToInt[BAD0] = 1;
+        intToChars[1] = "BAD0";
+        maxChars = 1;
+
+        std::vector<unsigned> current_sent;
+        std::vector<unsigned> current_sent_pos;
+        while (getline(actionsFile, lineS))
+        {
+          ReplaceStringInPlace(lineS, "-RRB-", "_RRB_");
+          ReplaceStringInPlace(lineS, "-LRB-", "_LRB_");
+          if (lineS.empty())
+          {
+            count = 0;
+            if (!first)
+            {
+              sentences[sentence] = current_sent;
+              sentencesPos[sentence] = current_sent_pos;
+            }
+
+            sentence++;
+            nsentences = sentence;
+
+            initial = true;
+            current_sent.clear();
+            current_sent_pos.clear();
+          }
+          else if (count == 0)
+          {
+            first = false;
+            //stack and buffer, for now, leave it like this.
+            count = 1;
+            if (initial)
+            {
+              // the initial line in each sentence may look like:
+              // [][the-det, cat-noun, is-verb, on-adp, the-det, mat-noun, ,-punct, ROOT-ROOT]
+              // first, get rid of the square brackets.
+              lineS = lineS.substr(3, lineS.size() - 4);
+              // read the initial line, token by token "the-det," "cat-noun," ...
+              std::istringstream iss(lineS);
+              do
+              {
+                std::string word;
+                iss >> word;
+                if (word.size() == 0)
+                {
+                  continue;
+                }
+                // remove the trailing comma if need be.
+                if (word[word.size() - 1] == ',')
+                {
+                  word = word.substr(0, word.size() - 1);
+                }
+                // split the string (at '-') into word and POS tag.
+                size_t posIndex = word.rfind('-');
+                if (posIndex == std::string::npos)
+                {
+                  std::cerr << "cant find the dash in '" << word << "'" << std::endl;
+                }
+                assert(posIndex != std::string::npos);
+                std::string pos = word.substr(posIndex + 1);
+                word = word.substr(0, posIndex);
+                // new POS tag
+                if (posToInt[pos] == 0)
+                {
+                  posToInt[pos] = maxPos;
+                  intToPos[maxPos] = pos;
+                  npos = maxPos;
+                  maxPos++;
+                }
+
+                // new word
+                if (wordsToInt[word] == 0)
+                {
+                  wordsToInt[word] = max;
+                  intToWords[max] = word;
+                  nwords = max;
+                  max++;
+
+                  unsigned j = 0;
+                  while (j < word.length())
+                  {
+                    std::string wj = "";
+                    for (unsigned h = j; h < j + UTF8Len(word[j]); h++)
+                    {
+                      wj += word[h];
+                    }
+                    if (charsToInt[wj] == 0)
+                    {
+                      charsToInt[wj] = maxChars;
+                      intToChars[maxChars] = wj;
+                      maxChars++;
+                    }
+                    j += UTF8Len(word[j]);
+                  }
+                }
+
+                current_sent.push_back(wordsToInt[word]);
+                current_sent_pos.push_back(posToInt[pos]);
+              } while (iss);
+            }
+            initial = false;
+          }
+          else if (count == 1)
+          {
+            int i = 0;
+            bool found = false;
+            for (auto a : actions)
+            {
+              if (a == lineS)
+              {
+                std::vector<unsigned> a = correct_act_sent[sentence];
+                a.push_back(i);
+                correct_act_sent[sentence] = a;
+                found = true;
+              }
+              i++;
+            }
+            if (!found)
+            {
+              actions.push_back(lineS);
+              ractions[lineS] = actions.size() - 1;
+              //std::cout << "mapping " << lineS << " " << ractions[lineS] << std::endl;
+              std::vector<unsigned> a = correct_act_sent[sentence];
+              a.push_back(actions.size() - 1);
+              correct_act_sent[sentence] = a;
+            }
+            count = 0;
+          }
+        }
+
+        // Add the last sentence.
+        if (current_sent.size() > 0)
+        {
+          sentences[sentence] = current_sent;
+          sentencesPos[sentence] = current_sent_pos;
+          sentence++;
+          nsentences = sentence;
+        }
+
+        actionsFile.close();
+
+        std::cerr << "done" << "\n";
         for (auto a : actions)
         {
-          std::cerr << a << std::endl;
+          std::cerr << a << "\n";
         }
         nactions = actions.size();
-        std::cerr << "nactions:" << nactions << std::endl;
-        std::cerr << "nwords:" << nwords << std::endl;
+        std::cerr << "nactions:" << nactions << "\n";
+        std::cerr << "nwords:" << nwords << "\n";
         for (unsigned i = 0; i < npos; i++)
         {
-          std::cerr << i << ":" << intToPos[i] << std::endl;
-        } 
-      }
-
-      void load_dev(const std::string &file){
-        _load(file, sentencesDev, sentencesStrDev, sentencesPosDev, sentencesHeadDev, sentencesDeprelDev);
-        nsentencesDev = sentencesDev.size();
-      }
-
-      inline unsigned get_or_add_word(const std::string& word){
-        _add(wordsToInt, intToWords, word, nwords);
-        return wordsToInt[word];
-      }
-
-    private:
-      static bool _add(std::map<std::string, unsigned> &toInt, std::map<unsigned, std::string> &fromInt, const std::string &s, int &n){
-        if(toInt.find(s)==toInt.end()){
-          toInt[s] = n;
-          fromInt[n] = s;
-          n++;
-          return true;
+          std::cerr << i << ":" << intToPos[i] << "\n";
         }
-        return false;
+        nactions = actions.size();
+
       }
 
-      static void _load(std::string file,
-                  std::map<int, std::vector<unsigned>> &sentences,
-                  std::map<int, std::vector<unsigned>> *sentencesStr,
-                  std::map<int, std::vector<unsigned>> &sentencesPos,
-                  std::map<int, std::map<int,int>> &sentencesHead,
-                  std::map<int, std::map<int,std::string>> &sentencesDeprel
-                ){
+      inline unsigned get_or_add_word(const std::string& word)
+      {
+        unsigned& id = wordsToInt[word];
+        if (id == 0)
+        {
+          id = max;
+          ++max;
+          intToWords[id] = word;
+          nwords = max;
+        }
+        return id;
+      }
 
-        sentences.clear();
-        if(sentencesStr){sentenceStr->clear();}
-        sentencesPos.clear();
-        sentencesHead.clear();
-        sentencesDeprel.clear();
+      inline void load_correct_actionsDev(std::string file)
+      {
+        std::ifstream actionsFile(file);
+        std::string lineS;
 
-        std::ifstream inF(file);
-        std::string line;
+        assert(maxPos > 1);
+        assert(max > 3);
+        int count = -1;
+        int sentence = -1;
+        bool initial = false;
+        bool first = true;
         std::vector<unsigned> current_sent;
-        std::vector<unsigned> current_sent_str;
         std::vector<unsigned> current_sent_pos;
-        std::map<int,int> current_sent_head;
-        std::map<int,std::string> current_sent_deprel;
-        while(std::getline(inF, line)){
-          std::vector<std::string> tokens;
-          boost::split(tokens, line, boost::is_any_of("\t"));
-
-          if(tokens.size()==0 && current_sent.size()>0){
-              sentences.push_back(current_sent);
-              if(sentencesStr){sentencesStr->push_back(current_sent_str);}
-              sentencesPos.push_back(current_sent_pos);
-              sentencesHead.push_back(current_sent_head);
-              sentencesDeprel.push_back(current_sent_deprel);
-
-              current_sent.clear();
-              current_sent_str.clear();
-              current_sent_pos.clear();
-              current_sent_head.clear();
-              current_sent_deprel.clear();
-              continue;
-          }
-
-          if(tokens.size()!=10){
-            continue;
-          }
-
-          std::string idx = tokens[0];
-          std::string surface = tokens[1];
-//          std::string lemma = tokens[2];
-          std::string pos = tokens[3];
-//          std::string xpos = tokens[4];
-//          std::string features = tokens[5];
-          std::string head = tokens[6];
-          std::string deprel = tokens[7];
-
-
-          if (_add(wordToInt, intToWords, word, nwords)){
-            //if new word, add to char map as well
-            unsigned j = 0;
-            while (j < word.length()){
-              std::string wj = "";
-              for (unsigned h = j; h < j + UTF8Len(word[j]); h++){
-                wj += word[h];
-              }
-              _add(charsToInt, intToChars, wj, nchars);
-              j += UTF8Len(word[j]);
+        std::vector<std::string> current_sent_str;
+        while (getline(actionsFile, lineS))
+        {
+          ReplaceStringInPlace(lineS, "-RRB-", "_RRB_");
+          ReplaceStringInPlace(lineS, "-LRB-", "_LRB_");
+          if (lineS.empty())
+          {
+            // an empty line marks the end of a sentence.
+            count = 0;
+            if (!first)
+            {
+              sentencesDev[sentence] = current_sent;
+              sentencesPosDev[sentence] = current_sent_pos;
+              sentencesStrDev[sentence] = current_sent_str;
             }
+
+            sentence++;
+            nsentencesDev = sentence;
+
+            initial = true;
+            current_sent.clear();
+            current_sent_pos.clear();
+            current_sent_str.clear();
           }
-          _add(posToInt, intToPos, pos, npos);
-          _add(deprelToInt, intToDeprel, deprel, ndeprel);
-
-          current_sent.push_back(wordToInt[surface]);
-          current_sent_str.push_back(surface);
-          current_sent_pos.push_back(posToInt[pos]);
-          current_sent_head[std::atoi(idx)]=std::atoi(head);
-          current_sent_deprel.push_back(delrelToInt[deprel]);
+          else if (count == 0)
+          {
+            first = false;
+            //stack and buffer, for now, leave it like this.
+            count = 1;
+            if (initial)
+            {
+              // the initial line in each sentence may look like:
+              // [][the-det, cat-noun, is-verb, on-adp, the-det, mat-noun, ,-punct, ROOT-ROOT]
+              // first, get rid of the square brackets.
+              lineS = lineS.substr(3, lineS.size() - 4);
+              // read the initial line, token by token "the-det," "cat-noun," ...
+              std::istringstream iss(lineS);
+              do
+              {
+                std::string word;
+                iss >> word;
+                if (word.size() == 0)
+                {
+                  continue;
+                }
+                // remove the trailing comma if need be.
+                if (word[word.size() - 1] == ',')
+                {
+                  word = word.substr(0, word.size() - 1);
+                }
+                // split the string (at '-') into word and POS tag.
+                size_t posIndex = word.rfind('-');
+                assert(posIndex != std::string::npos);
+                std::string pos = word.substr(posIndex + 1);
+                word = word.substr(0, posIndex);
+                // new POS tag
+                if (posToInt[pos] == 0)
+                {
+                  posToInt[pos] = maxPos;
+                  intToPos[maxPos] = pos;
+                  npos = maxPos;
+                  maxPos++;
+                }
+                // add an empty string for any token except OOVs (it is easy to
+                // recover the surface form of non-OOV using intToWords(id)).
+                current_sent_str.push_back("");
+                // OOV word
+                if (wordsToInt[word] == 0)
+                {
+                  if (USE_SPELLING)
+                  {
+                    max = nwords + 1;
+                    //std::cerr<< "max:" << max << "\n";
+                    wordsToInt[word] = max;
+                    intToWords[max] = word;
+                    nwords = max;
+                  }
+                  else
+                  {
+                    // save the surface form of this OOV before overwriting it.
+                    current_sent_str[current_sent_str.size() - 1] = word;
+                    word = Corpus::UNK;
+                  }
+                }
+                current_sent.push_back(wordsToInt[word]);
+                current_sent_pos.push_back(posToInt[pos]);
+              } while (iss);
+            }
+            initial = false;
+          }
+          else if (count == 1)
+          {
+            auto actionIter = std::find(actions.begin(), actions.end(), lineS);
+            if (actionIter != actions.end())
+            {
+              unsigned actionIndex = std::distance(actions.begin(), actionIter);
+              correct_act_sentDev[sentence].push_back(actionIndex);
+            }
+            else
+            {
+              // TODO: right now, new actions which haven't been observed in training
+              // are not added to correct_act_sentDev. This may be a problem if the
+              // training data is little.
+            }
+            count = 0;
+          }
         }
 
-        if(current_sent.size()>0){
-          sentences.push_back(current_sent);
-          if(sentencesStr){sentencesStr->push_back(current_sent_str);}
-          sentencesPos.push_back(current_sent_pos);
-          sentencesHead.push_back(current_sent_head);
-          sentencesDeprel.push_back(current_sent_deprel);
+        // Add the last sentence.
+        if (current_sent.size() > 0)
+        {
+          sentencesDev[sentence] = current_sent;
+          sentencesPosDev[sentence] = current_sent_pos;
+          sentencesStrDev[sentence] = current_sent_str;
+          sentence++;
+          nsentencesDev = sentence;
         }
 
-        inF.close();
+        actionsFile.close();
       }
 
-      static void _loadActions(const std::string &file, std::vector<std::string> &actions, std::map<std::string, int> &ractions){
-        actions.clear();
-        ractions.clear();
-        std::ifstream inF(file);
-        std::line;
-        while(std::getline(inF, line)){
-          actions.push_back(line);
-          ractions[line]=(actions.size()-1);
+      void ReplaceStringInPlace(std::string& subject, const std::string& search, const std::string& replace)
+      {
+        size_t pos = 0;
+        while ((pos = subject.find(search, pos)) != std::string::npos)
+        {
+          subject.replace(pos, search.length(), replace);
+          pos += replace.length();
         }
-        inF.close();
       }
   };
-}
+
+} // namespace
 
 #endif
