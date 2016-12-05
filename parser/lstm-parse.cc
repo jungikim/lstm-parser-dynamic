@@ -1,3 +1,4 @@
+#include <iostream>
 #include <cstdlib>
 #include <algorithm>
 #include <sstream>
@@ -119,6 +120,7 @@ void InitCommandLine(int argc, char** argv, po::variables_map* conf) {
         ("training_data,T", po::value<string>(), "List of Transitions - Training corpus")
         ("dev_data,d", po::value<string>(), "Development corpus")
         ("test_data,p", po::value<string>(), "Test corpus")
+        ("actions_list,a", po::value<string>(), "Actions list")
         ("unk_strategy,o", po::value<unsigned>()->default_value(1), "Unknown word strategy: 1 = singletons become UNK with probability unk_prob")
         ("unk_prob,u", po::value<double>()->default_value(0.2), "Probably with which to replace singletons with UNK in training data")
         ("model,m", po::value<string>(), "Load saved model from this file")
@@ -572,7 +574,6 @@ vector<string> arc_hybrid_oracle(const map<int,int>& gold_heads,
     return results;
 }
 
-// *** if correct_actions is empty, this runs greedy decoding ***
 // returns parse actions for input sentence (in training just returns the reference)
 // OOV handling: raw_sent will have the actual words
 //               sent will have words replaced by appropriate UNK tokens
@@ -582,7 +583,7 @@ vector<unsigned> log_prob_parser(ComputationGraph* hg,
                      const vector<unsigned>& raw_sent,  // raw sentence
                      const vector<unsigned>& sent,  // sent with oovs replaced
                      const vector<unsigned>& sentPos,
-                     const vector<unsigned>& correct_actions,
+                     const bool build_training_graph,
                      const vector<string>& setOfActions,
                      const map<unsigned, std::string>& intToWords,
 		     double *right,
@@ -612,7 +613,6 @@ vector<unsigned> log_prob_parser(ComputationGraph* hg,
     map<int,std::string> rels;
 
     vector<unsigned> results;
-    const bool build_training_graph = correct_actions.size() > 0;
 
     stack_lstm.new_graph(*hg);
     buffer_lstm.new_graph(*hg);
@@ -890,12 +890,12 @@ vector<unsigned> log_prob_parser(ComputationGraph* hg,
                 : arc_standard_oracle(correctHeads,correctLabels,rightmost_child,heads,stacki,bufferi); // YG
             // YG -- this block is just for verification sake
             // however, it will not work once we start deviating from the gold path.
-            if (0) {
-                action = correct_actions[action_count];
-                string saction = setOfActions[action];
-                //cout << saction << " " << gold_actions.front() << " " << gold_actions.back() << endl;
-                assert(gold_actions.front() == saction || gold_actions.back() == saction);
-            }
+//            if (0) {
+//                action = correct_actions[action_count];
+//                string saction = setOfActions[action];
+//                //cout << saction << " " << gold_actions.front() << " " << gold_actions.back() << endl;
+//                assert(gold_actions.front() == saction || gold_actions.back() == saction);
+//            }
             // YG -- end verification block
 
             // YG -- let action = highest scoring in gold_actions
@@ -1446,7 +1446,7 @@ int main(int argc, char** argv) {
   }
   cerr << "Writing parameters to file: " << fname << endl;
   bool softlinkCreated = false;
-  corpus.load_correct_actions(conf["training_data"].as<string>());	
+  corpus.load_train(conf["training_data"].as<string>(), conf["actions_list"].as<string>());
   const unsigned kUNK = corpus.get_or_add_word(cpyp::Corpus::UNK);
   kROOT_SYMBOL = corpus.get_or_add_word(ROOT_SYMBOL);
   //cout <<"KROOT:"<<kROOT_SYMBOL<<"\n";
@@ -1473,7 +1473,7 @@ int main(int argc, char** argv) {
   {  // compute the singletons in the parser's training data
     map<unsigned, unsigned> counts;
     for (auto sent : corpus.sentences)
-      for (auto word : sent.second) { training_vocab.insert(word); counts[word]++; }
+      for (auto word : sent) { training_vocab.insert(word); counts[word]++; }
     for (auto wc : counts)
       if (wc.second == 1) singletons.insert(wc.first);
   }
@@ -1481,8 +1481,8 @@ int main(int argc, char** argv) {
   cerr << "Number of words: " << corpus.nwords << endl;
   VOCAB_SIZE = corpus.nwords + 1;
 
-  cerr << "Number of UTF8 chars: " << corpus.maxChars << endl;
-  if (corpus.maxChars>255) CHAR_SIZE=corpus.maxChars;
+  cerr << "Number of UTF8 chars: " << corpus.nchars << endl;
+  if (corpus.nchars>255) CHAR_SIZE=corpus.nchars;
 
   ACTION_SIZE = corpus.nactions + 1;
   //POS_SIZE = corpus.npos + 1;
@@ -1500,7 +1500,7 @@ int main(int argc, char** argv) {
   }
 
   // OOV words will be replaced by UNK tokens
-  corpus.load_correct_actionsDev(conf["dev_data"].as<string>());
+  corpus.load_dev(conf["dev_data"].as<string>());
   if (USE_SPELLING) VOCAB_SIZE = corpus.nwords + 1;
   //TRAINING
   if (conf.count("train")) {
@@ -1539,13 +1539,13 @@ int main(int argc, char** argv) {
               for (auto& w : tsentence)
                   if (singletons.count(w) && cnn::rand01() < unk_prob) w = kUNK;
           }
-          const vector<unsigned>& sentencePos=corpus.sentencesPos[order[si]]; 
-          const vector<unsigned>& actions=corpus.correct_act_sent[order[si]];
+          const vector<unsigned>& sentencePos=corpus.sentencesPos[order[si]];
           ComputationGraph hg;
 
-          map<int, string> rel_ref1;
-          map<int,int> ref1 = parser.compute_heads(sentence.size(), actions, corpus.actions, &rel_ref1); //Dynamic oracles. New thing.
-          parser.log_prob_parser(&hg,sentence,tsentence,sentencePos,actions,corpus.actions,corpus.intToWords,&right,ref1,rel_ref1);
+          map<int, int> ref1 = corpus.sentencesHead[order[si]];
+          map<int, string> rel_ref1 = corpus.sentencesDeprel[order[si]];
+
+          vector<unsigned> pred = parser.log_prob_parser(&hg,sentence,tsentence,sentencePos, true,corpus.actions,corpus.intToWords,&right,ref1,rel_ref1);
 
           double lp = as_scalar(hg.incremental_forward());
           if (lp < 0) {
@@ -1556,7 +1556,7 @@ int main(int argc, char** argv) {
               hg.backward();
               sgd.update(1.0);
               llh += lp;
-              trs += actions.size();
+              trs += pred.size();
           }
           ++si;
       }
@@ -1578,7 +1578,6 @@ int main(int argc, char** argv) {
           for (unsigned sii = 0; sii < dev_size; ++sii) {
               const vector<unsigned>& sentence=corpus.sentencesDev[sii];
               const vector<unsigned>& sentencePos=corpus.sentencesPosDev[sii]; 
-              const vector<unsigned>& actions=corpus.correct_act_sentDev[sii];
               vector<unsigned> tsentence=sentence;
               if (!USE_SPELLING) {
                   for (auto& w : tsentence)
@@ -1586,17 +1585,18 @@ int main(int argc, char** argv) {
               }
 
               ComputationGraph hg;
-              map<int, string> rel_ref2;
-              map<int,int> ref2= parser.compute_heads(sentence.size(), actions, corpus.actions, &rel_ref2); //Dynamic oracles. New thing.
-              vector<unsigned> pred = parser.log_prob_parser(&hg,sentence,tsentence,sentencePos,vector<unsigned>(),corpus.actions,corpus.intToWords,&right,ref2,rel_ref2);
+
+              map<int, int> ref2 = corpus.sentencesHeadDev[sii];
+              map<int, string> rel_ref2 = corpus.sentencesDeprelDev[sii];
+
+              vector<unsigned> pred = parser.log_prob_parser(&hg,sentence,tsentence,sentencePos, false,corpus.actions,corpus.intToWords,&right,ref2,rel_ref2);
               double lp = 0;
-              //vector<unsigned> pred = parser.log_prob_parser_beam(&hg,sentence,sentencePos,corpus.actions,beam_size,&lp);
               llh -= lp;
-              trs += actions.size();
-              map<int,int> ref = parser.compute_heads(sentence.size(), actions, corpus.actions);
+              trs += pred.size();
+
               map<int,int> hyp = parser.compute_heads_hybrid(sentence.size(), pred, corpus.actions); // YG -- TODO: hybrid or standard
               //output_conll(sentence, corpus.intToWords, ref, hyp);
-              correct_heads += compute_correct(ref, hyp, sentence.size() - 1);
+              correct_heads += compute_correct(ref2, hyp, sentence.size() - 1);
               total_heads += sentence.size() - 1;
           }
           auto t_end = std::chrono::high_resolution_clock::now();
@@ -1633,7 +1633,6 @@ int main(int argc, char** argv) {
       const vector<unsigned>& sentence=corpus.sentencesDev[sii];
       const vector<unsigned>& sentencePos=corpus.sentencesPosDev[sii]; 
       const vector<string>& sentenceUnkStr=corpus.sentencesStrDev[sii]; 
-      const vector<unsigned>& actions=corpus.correct_act_sentDev[sii];
       vector<unsigned> tsentence=sentence;
       if (!USE_SPELLING) {
         for (auto& w : tsentence)
@@ -1642,27 +1641,25 @@ int main(int argc, char** argv) {
       ComputationGraph cg;
       double lp = 0;
       vector<unsigned> pred;
-      if (beam_size == 1) {
-	map<int, string> rel_ref3;
-        map<int,int> ref3 = parser.compute_heads(sentence.size(), actions, corpus.actions, &rel_ref3); //Dynamic oracles. New thing
-        pred = parser.log_prob_parser(&cg,sentence,tsentence,sentencePos,vector<unsigned>(),corpus.actions,corpus.intToWords,&right,ref3, rel_ref3);
-      }
-      else
-        pred = parser.log_prob_parser_beam(&cg,sentence,tsentence,sentencePos,corpus.actions,beam_size,&lp);
+
+        map<int, int> ref3 = corpus.sentencesHeadDev[sii];
+        map<int, string> rel_ref3 = corpus.sentencesDeprelDev[sii];
+
+        pred = parser.log_prob_parser(&cg,sentence,tsentence,sentencePos, false,corpus.actions,corpus.intToWords,&right,ref3, rel_ref3);
       llh -= lp;
-      trs += actions.size();
+      trs += pred.size();
+
       map<int, string> rel_ref, rel_hyp;
-      map<int,int> ref = parser.compute_heads(sentence.size(), actions, corpus.actions, &rel_ref);
-      map<int,int> hyp = parser.compute_heads_hybrid(sentence.size(), pred, corpus.actions, &rel_hyp); // YG -- TODO: hybrid or standard
+      map<int,int> hyp = parser.compute_heads_hybrid(sentence.size(), pred, corpus.actions, &rel_hyp);
       output_conll(sentence, sentencePos, sentenceUnkStr, corpus.intToWords, corpus.intToPos, hyp, rel_hyp);
-      correct_heads += compute_correct(ref, hyp, sentence.size() - 1);
+      correct_heads += compute_correct(ref3, hyp, sentence.size() - 1);
       total_heads += sentence.size() - 1;
     }
     auto t_end = std::chrono::high_resolution_clock::now();
     cerr << "TEST llh=" << llh << " ppl: " << exp(llh / trs) << " err: " << (trs - right) / trs << " uas: " << (correct_heads / total_heads) << "\t[" << corpus_size << " sents in " << std::chrono::duration<double, std::milli>(t_end-t_start).count() << " ms]" << endl;
   }
-  for (unsigned i = 0; i < corpus.actions.size(); ++i) {
-    //cerr << corpus.actions[i] << '\t' << parser.p_r->values[i].transpose() << endl;
-    //cerr << corpus.actions[i] << '\t' << parser.p_p2a->values.col(i).transpose() << endl; 
-  }
+//  for (unsigned i = 0; i < corpus.actions.size(); ++i) {
+//    cerr << corpus.actions[i] << '\t' << parser.p_r->values[i].transpose() << endl;
+//    cerr << corpus.actions[i] << '\t' << parser.p_p2a->values.col(i).transpose() << endl;
+//  }
 }
