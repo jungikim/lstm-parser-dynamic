@@ -125,7 +125,6 @@ void InitCommandLine(int argc, char** argv, po::variables_map* conf) {
         ("unk_prob,u", po::value<double>()->default_value(0.2), "Probably with which to replace singletons with UNK in training data")
         ("model,m", po::value<string>(), "Load saved model from this file")
         ("use_pos_tags,P", "make POS tags visible to parser")
-        ("beam_size,b", po::value<unsigned>()->default_value(1), "beam size")
         ("layers", po::value<unsigned>()->default_value(2), "number of LSTM layers")
         ("action_dim", po::value<unsigned>()->default_value(16), "action embedding size")
         ("input_dim", po::value<unsigned>()->default_value(32), "input embedding size")
@@ -189,70 +188,66 @@ struct ParserBuilder {
   Parameters* p_start_of_word;//Miguel -->dummy <s> symbol
   Parameters* p_end_of_word; //Miguel --> dummy </s> symbol
   LookupParameters* char_emb; //Miguel-> mapping of characters to vectors 
-
-
   LSTMBuilder fw_char_lstm; // Miguel
   LSTMBuilder bw_char_lstm; //Miguel
 
 
   explicit ParserBuilder(Model* model, const unordered_map<unsigned, vector<float>>& pretrained) :
-      stack_lstm(LAYERS, LSTM_INPUT_DIM, HIDDEN_DIM, model),
-      buffer_lstm(LAYERS, LSTM_INPUT_DIM, HIDDEN_DIM, model),
-      action_lstm(LAYERS, ACTION_DIM, HIDDEN_DIM, model),
-      p_w(model->add_lookup_parameters(VOCAB_SIZE, Dim(INPUT_DIM, 1))),
-      p_a(model->add_lookup_parameters(ACTION_SIZE, Dim(ACTION_DIM, 1))),
-      p_r(model->add_lookup_parameters(ACTION_SIZE, Dim(REL_DIM, 1))),
-      p_pbias(model->add_parameters(Dim(HIDDEN_DIM, 1))),
-      p_A(model->add_parameters(Dim(HIDDEN_DIM, HIDDEN_DIM))),
-      p_B(model->add_parameters(Dim(HIDDEN_DIM, HIDDEN_DIM))),
-      p_S(model->add_parameters(Dim(HIDDEN_DIM, HIDDEN_DIM))),
-      p_H(model->add_parameters(Dim(LSTM_INPUT_DIM, LSTM_INPUT_DIM))),
-      p_D(model->add_parameters(Dim(LSTM_INPUT_DIM, LSTM_INPUT_DIM))),
-      p_Rl(model->add_parameters(Dim(LSTM_INPUT_DIM, REL_DIM))),
-      p_Rr(model->add_parameters(Dim(LSTM_INPUT_DIM, REL_DIM))),
-      p_w2l(model->add_parameters(Dim(LSTM_INPUT_DIM, INPUT_DIM))),
-      p_ib(model->add_parameters(Dim(LSTM_INPUT_DIM, 1))),
-      p_cbias(model->add_parameters(Dim(LSTM_INPUT_DIM, 1))),
-      p_p2a(model->add_parameters(Dim(ACTION_SIZE, HIDDEN_DIM))),
-      p_action_start(model->add_parameters(Dim(ACTION_DIM, 1))),
-      p_abias(model->add_parameters(Dim(ACTION_SIZE, 1))),
+        stack_lstm(LAYERS, LSTM_INPUT_DIM, HIDDEN_DIM, model), //
+        buffer_lstm(LAYERS, LSTM_INPUT_DIM, HIDDEN_DIM, model), //
+        action_lstm(LAYERS, ACTION_DIM, HIDDEN_DIM, model), //
+        p_w(model->add_lookup_parameters(VOCAB_SIZE, Dim(INPUT_DIM, 1))), //
+        p_a(model->add_lookup_parameters(ACTION_SIZE, Dim(ACTION_DIM, 1))), //
+        p_r(model->add_lookup_parameters(ACTION_SIZE, Dim(REL_DIM, 1))), //
+        p_pbias(model->add_parameters(Dim(HIDDEN_DIM, 1))), //
+        p_A(model->add_parameters(Dim(HIDDEN_DIM, HIDDEN_DIM))), //
+        p_B(model->add_parameters(Dim(HIDDEN_DIM, HIDDEN_DIM))), //
+        p_S(model->add_parameters(Dim(HIDDEN_DIM, HIDDEN_DIM))), //
+        p_H(model->add_parameters(Dim(LSTM_INPUT_DIM, LSTM_INPUT_DIM))), //
+        p_D(model->add_parameters(Dim(LSTM_INPUT_DIM, LSTM_INPUT_DIM))), //
+        p_Rl(model->add_parameters(Dim(LSTM_INPUT_DIM, REL_DIM))), //
+        p_Rr(model->add_parameters(Dim(LSTM_INPUT_DIM, REL_DIM))), //
+        p_w2l(model->add_parameters(Dim(LSTM_INPUT_DIM, INPUT_DIM))), //
+        p_ib(model->add_parameters(Dim(LSTM_INPUT_DIM, 1))), //
+        p_cbias(model->add_parameters(Dim(LSTM_INPUT_DIM, 1))), //
+        p_p2a(model->add_parameters(Dim(ACTION_SIZE, HIDDEN_DIM))), //
+        p_action_start(model->add_parameters(Dim(ACTION_DIM, 1))), //
+        p_abias(model->add_parameters(Dim(ACTION_SIZE, 1))), //
 
-      p_buffer_guard(model->add_parameters(Dim(LSTM_INPUT_DIM, 1))),
-      p_stack_guard(model->add_parameters(Dim(LSTM_INPUT_DIM, 1))),
+        p_buffer_guard(model->add_parameters(Dim(LSTM_INPUT_DIM, 1))), //
+        p_stack_guard(model->add_parameters(Dim(LSTM_INPUT_DIM, 1))), //
 
-      p_start_of_word(model->add_parameters(Dim(LSTM_INPUT_DIM, 1))), //Miguel
-      p_end_of_word(model->add_parameters(Dim(LSTM_INPUT_DIM, 1))), //Miguel 
-
-      char_emb(model->add_lookup_parameters(CHAR_SIZE, Dim(INPUT_DIM, 1))),//Miguel
-
-//      fw_char_lstm(LAYERS, LSTM_CHAR_OUTPUT_DIM, LSTM_INPUT_DIM, model), //Miguel
-//      bw_char_lstm(LAYERS, LSTM_CHAR_OUTPUT_DIM, LSTM_INPUT_DIM,  model), //Miguel
-
-      fw_char_lstm(LAYERS, LSTM_INPUT_DIM, LSTM_CHAR_OUTPUT_DIM/2, model), //Miguel 
-      bw_char_lstm(LAYERS, LSTM_INPUT_DIM, LSTM_CHAR_OUTPUT_DIM/2, model) /*Miguel*/ {
-    if (USE_POS) {
-      p_p = model->add_lookup_parameters(POS_SIZE, Dim(POS_DIM, 1));
-      p_p2l = model->add_parameters(Dim(LSTM_INPUT_DIM, POS_DIM));
+        p_start_of_word(model->add_parameters(Dim(LSTM_INPUT_DIM, 1))), //
+        p_end_of_word(model->add_parameters(Dim(LSTM_INPUT_DIM, 1))), //
+        char_emb(model->add_lookup_parameters(CHAR_SIZE, Dim(INPUT_DIM, 1))), //
+        fw_char_lstm(LAYERS, LSTM_INPUT_DIM, LSTM_CHAR_OUTPUT_DIM / 2, model), //
+        bw_char_lstm(LAYERS, LSTM_INPUT_DIM, LSTM_CHAR_OUTPUT_DIM / 2, model) //
+    {
+      if (USE_POS)
+      {
+        p_p = model->add_lookup_parameters(POS_SIZE, Dim(POS_DIM, 1));
+        p_p2l = model->add_parameters(Dim(LSTM_INPUT_DIM, POS_DIM));
+      }
+      if (pretrained.size() > 0)
+      {
+        p_t = model->add_lookup_parameters(VOCAB_SIZE, Dim(PRETRAINED_DIM, 1));
+        for (auto it : pretrained)
+          p_t->Initialize(it.first, it.second);
+        p_t2l = model->add_parameters(Dim(LSTM_INPUT_DIM, PRETRAINED_DIM));
+      }
+      else
+      {
+        p_t = nullptr;
+        p_t2l = nullptr;
+      }
     }
-    if (pretrained.size() > 0) {
-      p_t = model->add_lookup_parameters(VOCAB_SIZE, Dim(PRETRAINED_DIM, 1));
-      for (auto it : pretrained)
-        p_t->Initialize(it.first, it.second);
-      p_t2l = model->add_parameters(Dim(LSTM_INPUT_DIM, PRETRAINED_DIM));
-    } else {
-      p_t = nullptr;
-      p_t2l = nullptr;
-    }
-  }
 
 static bool IsActionForbidden(const string& a, unsigned bsize, unsigned ssize, vector<int> stacki) {
   if (a[1]=='W' && ssize<3) return true; //MIGUEL
 
   if (a[1]=='W') { //MIGUEL
-
         int top=stacki[stacki.size()-1];
         int sec=stacki[stacki.size()-2];
-
         if (sec>top) return true;
   }
 
@@ -283,19 +278,6 @@ static bool IsActionForbidden(const string& a, unsigned bsize, unsigned ssize, v
   return false;
 }
 
-/*static bool IsActionForbidden(const string& a, unsigned bsize, unsigned ssize) {
-  bool is_shift = (a[0] == 'S');
-  bool is_reduce = !is_shift;
-  if (is_shift && bsize == 1) return true;
-  if (is_reduce && ssize < 3) return true;
-  if (bsize == 2 && // ROOT is the only thing remaining on buffer
-      ssize > 2 && // there is more than a single element on the stack
-      is_shift) return true;
-  // only attach left to ROOT
-  if (bsize == 1 && ssize == 3 && a[0] == 'R') return true;
-  return false;
-}*/
-
 static map<int,int> compute_heads(unsigned sent_len, const vector<unsigned>& actions, const vector<string>& setOfActions, map<int,string>* pr = nullptr) {
     // TODO YG Verify This!!!
   map<int,int> heads;
@@ -308,7 +290,6 @@ static map<int,int> compute_heads(unsigned sent_len, const vector<unsigned>& act
   bufferi[0] = -999;
   for (auto action: actions) { // loop over transitions for sentence
     const string& actionString=setOfActions[action];
-      //cout << "action:" << action << " " << actionString << endl;
     const char ac = actionString[0];
     const char ac2 = actionString[1];
     if (ac =='S' && ac2=='H') {  // SHIFT
@@ -319,7 +300,6 @@ static map<int,int> compute_heads(unsigned sent_len, const vector<unsigned>& act
    else if (ac=='S' && ac2=='W') {
         assert(stacki.size() > 2);
 
-//	std::cout<<"SWAP"<<"\n";
         unsigned ii = 0, jj = 0;
         jj=stacki.back();
         stacki.pop_back();
@@ -328,7 +308,6 @@ static map<int,int> compute_heads(unsigned sent_len, const vector<unsigned>& act
         stacki.pop_back();
 
         bufferi.push_back(ii);
-
         stacki.push_back(jj);
     }
 
@@ -529,67 +508,82 @@ int arc_hybrid_right_loss(int b0,
     return loss;
 }
 
-vector<string> arc_hybrid_oracle(const map<int,int>& gold_heads,
-                                 const map<int,string>& gold_rels,
-                                 const map<int,int>& gold_rmcs, // rightmost childs
-                                 const map<int,int>& curr_heads,
-                                 const vector<int>& stacki,
-                                 const vector<int>& bufferi) {
-
-    vector<string> results;
-    int b0 = bufferi.back();
-    //cout << "oracle. b0=" << b0+1 << endl;
-    if (b0 >= 0 && arc_hybrid_shift_loss(b0, stacki, gold_heads) == 0) {
+    vector<string> arc_hybrid_oracle(const map<int, int>& gold_heads,
+                                     const map<int, string>& gold_rels,
+                                     const map<int, int>& gold_rmcs, // rightmost childs
+                                     const map<int, int>& curr_heads,
+                                     const vector<int>& stacki,
+                                     const vector<int>& bufferi)
+    {
+      vector<string> results;
+      int b0 = bufferi.back();
+      //cout << "oracle. b0=" << b0+1 << endl;
+      if (b0 >= 0 && arc_hybrid_shift_loss(b0, stacki, gold_heads) == 0)
+      {
         results.push_back("SHIFT");
-        if (EXPLORE == 0) return results;
-    }
-    if (stacki.size() < 2) return results;
-    int s0 = stacki[stacki.size()-1];
-    string label = gold_rels.at(s0);
-    if (arc_hybrid_left_loss(b0, stacki, gold_heads) == 0) {
-        if (gold_heads.at(s0) == b0) {
-            results.push_back("LEFT-ARC(" + label + ")");
-        } else { // allow all labels
-            for (const string& lbl : all_lefts) {
-                results.push_back(lbl);
-            }
+        if (EXPLORE == 0)
+          return results;
+      }
+      if (stacki.size() < 2)
+        return results;
+      int s0 = stacki[stacki.size() - 1];
+      string label = gold_rels.at(s0);
+      if (arc_hybrid_left_loss(b0, stacki, gold_heads) == 0)
+      {
+        if (gold_heads.at(s0) == b0)
+        {
+          results.push_back("LEFT-ARC(" + label + ")");
         }
-        if (EXPLORE == 0) return results;
-    }
-    if (stacki.size() < 3) {
+        else
+        { // allow all labels
+          for (const string& lbl : all_lefts)
+          {
+            results.push_back(lbl);
+          }
+        }
+        if (EXPLORE == 0)
+          return results;
+      }
+      if (stacki.size() < 3)
+      {
         assert(results.size() > 0);
         return results;
-    }
-    int s1 = stacki.at(stacki.size()-2);
-    if (arc_hybrid_right_loss(b0, stacki, gold_heads) == 0) {
-        if (gold_heads.at(s0) == s1) {
-            results.push_back("RIGHT-ARC(" + label + ")");
-        } else { // allow all labels
-            for (const string& lbl : all_rights) {
-                results.push_back(lbl);
-            }
+      }
+      int s1 = stacki.at(stacki.size() - 2);
+      if (arc_hybrid_right_loss(b0, stacki, gold_heads) == 0)
+      {
+        if (gold_heads.at(s0) == s1)
+        {
+          results.push_back("RIGHT-ARC(" + label + ")");
         }
+        else
+        { // allow all labels
+          for (const string& lbl : all_rights)
+          {
+            results.push_back(lbl);
+          }
+        }
+      }
+      assert(results.size() > 0);
+      return results;
     }
-    assert(results.size() > 0);
-    return results;
-}
 
 // returns parse actions for input sentence (in training just returns the reference)
 // OOV handling: raw_sent will have the actual words
 //               sent will have words replaced by appropriate UNK tokens
 // this lets us use pretrained embeddings, when available, for words that were OOV in the
 // parser training data
-vector<unsigned> log_prob_parser(ComputationGraph* hg,
-                     const vector<unsigned>& raw_sent,  // raw sentence
-                     const vector<unsigned>& sent,  // sent with oovs replaced
-                     const vector<unsigned>& sentPos,
-                     const bool build_training_graph,
-                     const vector<string>& setOfActions,
-                     const map<unsigned, std::string>& intToWords,
-		     double *right,
-		     const map<int,int>& correctHeads, //Dynamic-oracles. new thing
-             const map<int,string>& correctLabels //Dynamic-oracles. new thing
-        ) {
+    vector<unsigned> log_prob_parser(ComputationGraph* hg, const vector<unsigned>& raw_sent,  // raw sentence
+                                     const vector<unsigned>& sent,  // sent with oovs replaced
+                                     const vector<unsigned>& sentPos, //
+                                     const bool build_training_graph, //
+                                     const vector<string>& setOfActions, //
+                                     const map<unsigned, std::string>& intToWords, //
+                                     double *right, //
+                                     const map<int, int>& correctHeads, //Dynamic-oracles. new thing
+                                     const map<int, string>& correctLabels //Dynamic-oracles. new thing
+                                     )
+    {
     if (all_lefts.size() == 0) { // YG -- initalize once. TODO move to nicer place.
         for (const string& a : setOfActions) {
             if (a[0] == 'S') { continue; }
@@ -648,128 +642,59 @@ vector<unsigned> log_prob_parser(ComputationGraph* hg,
     vector<int> bufferi(sent.size() + 1);  // position of the words in the sentence
     // precompute buffer representation from left to right
 
-
     Expression word_end = parameter(*hg, p_end_of_word); //Miguel
     Expression word_start = parameter(*hg, p_start_of_word); //Miguel
 
-    if (USE_SPELLING){ //{{{
+    if (USE_SPELLING){
         fw_char_lstm.new_graph(*hg);
-        //    fw_char_lstm.add_parameter_edges(hg);
-
         bw_char_lstm.new_graph(*hg);
-        //    bw_char_lstm.add_parameter_edges(hg);
-    } //}}}
+    }
 
     for (unsigned i = 0; i < sent.size(); ++i) {
         assert(sent[i] < VOCAB_SIZE);
-        //Expression w = lookup(*hg, p_w, sent[i]);
 
         unsigned wi=sent[i];
         std::string ww=intToWords.at(wi);
         Expression w;
-        /**********SPELLING MODEL*****************/ // {{{
+
         if (USE_SPELLING) { 
-            //std::cout<<"using spelling"<<"\n";
             if (ww.length()==4  && ww[0]=='R' && ww[1]=='O' && ww[2]=='O' && ww[3]=='T'){
                 w=lookup(*hg, p_w, sent[i]); //we do not need a LSTM encoding for the root word, so we put it directly-.
             }
             else {
-
                 fw_char_lstm.start_new_sequence();
-                //cerr<<"start_new_sequence done"<<"\n";
-
                 fw_char_lstm.add_input(word_start);
-                //cerr<<"added start of word symbol"<<"\n";
-                /*for (unsigned j=0;j<w.length();j++){
 
-                //cerr<<j<<":"<<w[j]<<"\n"; 
-                Expression cj=lookup(*hg, char_emb, w[j]);
-                fw_char_lstm.add_input(cj, hg);
-
-                //std::cout<<"Inputdim:"<<LSTM_INPUT_DIM<<"\n";  
-                //hg->incremental_forward();
-
-                }*/
                 std::vector<int> strevbuffer;
                 for (unsigned j=0;j<ww.length();j+=UTF8Len(ww[j])){
 
-                    //cerr<<j<<":"<<w[j]<<"\n"; 
                     std::string wj;
                     for (unsigned h=j;h<j+UTF8Len(ww[j]);h++) wj+=ww[h];
-                    //std::cout<<"fw"<<wj<<"\n";
                     int wjint=corpus.charsToInt[wj];
-                    //std::cout<<"fw:"<<wjint<<"\n";
                     strevbuffer.push_back(wjint);
                     Expression cj=lookup(*hg, char_emb, wjint);
                     fw_char_lstm.add_input(cj);
-
-                    //std::cout<<"Inputdim:"<<LSTM_INPUT_DIM<<"\n";  
-                    //hg->incremental_forward();
-
                 }
                 fw_char_lstm.add_input(word_end);
-                //cerr<<"added end of word symbol"<<"\n";
-
-
-
                 Expression fw_i=fw_char_lstm.back();
 
-                //cerr<<"fw_char_lstm.back() done"<<"\n";
-
                 bw_char_lstm.start_new_sequence();
-                //cerr<<"bw start new sequence done"<<"\n";
-
                 bw_char_lstm.add_input(word_end);
-                //for (unsigned j=w.length()-1;j>=0;j--){
-                /*for (unsigned j=w.length();j-->0;){
-                //cerr<<j<<":"<<w[j]<<"\n";
-                Expression cj=lookup(*hg, char_emb, w[j]);
-                bw_char_lstm.add_input(cj); 
-                }*/
-                //}
                 while(!strevbuffer.empty()) {
                     int wjint=strevbuffer.back();
-                    //std::cout<<"bw:"<<wjint<<"\n";
                     Expression cj=lookup(*hg, char_emb, wjint);
                     bw_char_lstm.add_input(cj);
                     strevbuffer.pop_back();
                 }
-
-                /*for (unsigned j=w.length()-1;j>0;j=j-UTF8Len(w[j])) {
-
-                //cerr<<j<<":"<<w[j]<<"\n"; 
-                std::string wj;
-                for (unsigned h=j;h<j+UTF8Len(w[j]);h++) wj+=w[h];
-                std::cout<<"bw"<<wj<<"\n";
-                int wjint=corpus.charsToInt[wj];
-                Expression cj=lookup(*hg, char_emb, wjint);
-                bw_char_lstm.add_input(cj);
-
-                //std::cout<<"Inputdim:"<<LSTM_INPUT_DIM<<"\n";  
-                //hg->incremental_forward();
-
-                }*/
                 bw_char_lstm.add_input(word_start);
-                //cerr<<"start symbol in bw seq"<<"\n";     
-
                 Expression bw_i=bw_char_lstm.back();
 
                 vector<Expression> tt = {fw_i, bw_i};
-                w=concatenate(tt); //and this goes into the buffer...
-                //cerr<<"fw and bw done"<<"\n";
+                w=concatenate(tt);
             }
 
         } 
-        /**************************************************/
-        //cerr<<"concatenate?"<<"\n";
-
-        //  }}}
-        /***************NO SPELLING*************************************/
-
-        // Expression w = lookup(*hg, p_w, sent[i]);
-        else { //NO SPELLING
-            //Don't use SPELLING
-            //std::cout<<"don't use spelling"<<"\n";
+        else {
             w=lookup(*hg, p_w, sent[i]);
         }
 
@@ -803,12 +728,7 @@ vector<unsigned> log_prob_parser(ComputationGraph* hg,
     string rootword;
     unsigned action_count = 0;  // incremented at each prediction
 
-    for (int i = 1; i < bufferi.size(); ++i) {
-        //cout << "h[" << bufferi[i]+1 << "]=" << correctHeads.at(bufferi[i]) + 1 << endl; 
-    }
     while(stacki.size() > 2 || bufferi.size() > 1) {
-    //while(stack.size() > 2 || buffer.size() > 1) { //}
-
         // get list of possible actions for the current parser state
         vector<unsigned> current_valid_actions;
         for (auto a: possible_actions) {
@@ -816,53 +736,54 @@ vector<unsigned> log_prob_parser(ComputationGraph* hg,
                 continue;
             current_valid_actions.push_back(a);
         }
-        if (0) { // verify correctness mode
-        // {{{
-            vector<string> gold_actions = arc_hybrid_oracle(  correctHeads,correctLabels,rightmost_child,heads,stacki,bufferi);
-            ++action_count;
 
-            const string& actionString=gold_actions[0]; // TODO random
-            for (int _i = 0; _i < setOfActions.size(); ++_i) {
-                if (setOfActions[_i] == actionString) {
-                    results.push_back(_i);
-                    break;
-                }
-            }
-            const char ac = actionString[0];
-            const char ac2 = actionString[1];
-            //cout << "action " << actionString << endl;
-
-
-            if (ac =='S' && ac2=='H') {  // SHIFT
-                stacki.push_back(bufferi.back());
-                bufferi.pop_back();
-            }  else { // LEFT or RIGHT
-                    unsigned depi = 0, headi = 0;
-                    depi = stacki.back();
-                    stacki.pop_back();
-
-                    if (ac == 'L') { // head is on buffer
-                        headi = bufferi.back();
-                    }
-                    if (ac == 'R') { // head is next on stack
-                        headi = stacki.back();
-                        stacki.pop_back();
-                    }
-
-                    //for Dynamic oracles
-                    heads[depi] = headi;        // not sure this is really needed
-                    rels[depi] = actionString;  // not sure this is really needed
-
-                    if (headi == sent.size() - 1) rootword = intToWords.find(sent[depi])->second;
-                    if (ac == 'R') {
-                        stacki.push_back(headi);
-                    } else { // ac == 'L'
-                        //MB -- if I'm not mistaken, this was missing. (see below in line 926. For bufferi it is not needed since it is the same representation).
-                    }
-                }
-            continue;
-        } 
-        // }}}
+//        if (0) { // verify correctness mode
+//        // {{{
+//            vector<string> gold_actions = arc_hybrid_oracle(  correctHeads,correctLabels,rightmost_child,heads,stacki,bufferi);
+//            ++action_count;
+//
+//            const string& actionString=gold_actions[0]; // TODO random
+//            for (int _i = 0; _i < setOfActions.size(); ++_i) {
+//                if (setOfActions[_i] == actionString) {
+//                    results.push_back(_i);
+//                    break;
+//                }
+//            }
+//            const char ac = actionString[0];
+//            const char ac2 = actionString[1];
+//            //cout << "action " << actionString << endl;
+//
+//
+//            if (ac =='S' && ac2=='H') {  // SHIFT
+//                stacki.push_back(bufferi.back());
+//                bufferi.pop_back();
+//            }  else { // LEFT or RIGHT
+//                    unsigned depi = 0, headi = 0;
+//                    depi = stacki.back();
+//                    stacki.pop_back();
+//
+//                    if (ac == 'L') { // head is on buffer
+//                        headi = bufferi.back();
+//                    }
+//                    if (ac == 'R') { // head is next on stack
+//                        headi = stacki.back();
+//                        stacki.pop_back();
+//                    }
+//
+//                    //for Dynamic oracles
+//                    heads[depi] = headi;        // not sure this is really needed
+//                    rels[depi] = actionString;  // not sure this is really needed
+//
+//                    if (headi == sent.size() - 1) rootword = intToWords.find(sent[depi])->second;
+//                    if (ac == 'R') {
+//                        stacki.push_back(headi);
+//                    } else { // ac == 'L'
+//                        //MB -- if I'm not mistaken, this was missing. (see below in line 926. For bufferi it is not needed since it is the same representation).
+//                    }
+//                }
+//            continue;
+//        }
+//        // }}}
 
         // p_t = pbias + S * slstm + B * blstm + A * almst
         Expression p_t = affine_transform({pbias, S, stack_lstm.back(), B, buffer_lstm.back(), A, action_lstm.back()});
@@ -870,7 +791,6 @@ vector<unsigned> log_prob_parser(ComputationGraph* hg,
         // r_t = abias + p2a * nlp
         Expression r_t = affine_transform({abias, p2a, nlp_t});
 
-        // adist = log_softmax(r_t, current_valid_actions)
         Expression adiste = log_softmax(r_t, current_valid_actions);
         vector<float> adist = as_vector(hg->incremental_forward());
         double best_score = adist[current_valid_actions[0]];
@@ -963,11 +883,8 @@ vector<unsigned> log_prob_parser(ComputationGraph* hg,
 
         // do action
         const string& actionString=setOfActions[action];
-        //cerr << "A=" << actionString << " Bsize=" << buffer.size() << " Ssize=" << stack.size() << endl;
         const char ac = actionString[0];
         const char ac2 = actionString[1];
-
-
         if (ac =='S' && ac2=='H') {  // SHIFT
             assert(buffer.size() > 1); // dummy symbol means > 1 (not >= 1)
             stack.push_back(buffer.back());
@@ -979,9 +896,6 @@ vector<unsigned> log_prob_parser(ComputationGraph* hg,
         } 
         else if (ac=='S' && ac2=='W'){ //SWAP --- Miguel {{{
             assert(stack.size() > 2); // dummy symbol means > 2 (not >= 2)
-
-            //std::cout<<"SWAP: "<<"stack.size:"<<stack.size()<<"\n";
-
             Expression toki, tokj;
             unsigned ii = 0, jj = 0;
             tokj=stack.back();
@@ -994,23 +908,17 @@ vector<unsigned> log_prob_parser(ComputationGraph* hg,
             stack.pop_back();
             stacki.pop_back();
 
+            stack_lstm.rewind_one_step();
+            stack_lstm.rewind_one_step();
+
             buffer.push_back(toki);
             bufferi.push_back(ii);
-
-            stack_lstm.rewind_one_step();
-            stack_lstm.rewind_one_step();
-
-
             buffer_lstm.add_input(buffer.back());
 
             stack.push_back(tokj);
             stacki.push_back(jj);
-
             stack_lstm.add_input(stack.back());
 
-            //stack_lstm.rewind_one_step();
-            //buffer_lstm.rewind_one_step();
-            // }}}
         } else { // LEFT or RIGHT
             if (use_arc_hybrid) { // YG
                 assert(stack.size() > 1); // need one more than guard symbol
@@ -1036,10 +944,10 @@ vector<unsigned> log_prob_parser(ComputationGraph* hg,
                 heads[depi] = headi;        // not sure this is really needed
                 rels[depi] = actionString;  // not sure this is really needed
 
-                if (build_training_graph) {  // if we are in training mode, and not using exploration, verify arc is correct (for oracle debugging)
+//                if (build_training_graph) {  // if we are in training mode, and not using exploration, verify arc is correct (for oracle debugging)
                     //cout << depi << " " << heads.at(depi) << " " << correctHeads.at(depi) << endl;
                     //assert(heads.at(depi) == correctHeads.at(depi));
-                }
+//                }
                 if (headi == sent.size() - 1) rootword = intToWords.find(sent[depi])->second;
                 // composed = cbias + H * head + D * dep + R * relation
                 Expression composed = (orig_compose || ac == 'L') ? affine_transform({cbias, H, head, D, dep, Rl, relation}) :
@@ -1092,7 +1000,6 @@ vector<unsigned> log_prob_parser(ComputationGraph* hg,
             }
         }
     }
-    //cout << "done sentence" << endl;
     assert(stack.size() == 2); // guard symbol, root
     assert(stacki.size() == 2);
     assert(buffer.size() == 1); // guard symbol
@@ -1128,201 +1035,12 @@ static void prune(vector<ParserState>& pq, unsigned k) {
   partial_sort(pq.begin(), pq.begin() + k, pq.end(), ParserStateCompare());
   pq.resize(k);
   reverse(pq.begin(), pq.end());
-  //cerr << "PRUNE\n";
-  //for (unsigned i = 0; i < pq.size(); ++i) {
-  //  cerr << pq[i].score << endl;
-  //}
 }
 
 static bool all_complete(const vector<ParserState>& pq) {
   for (auto& ps : pq) if (!ps.complete) return false;
   return true;
 }
-
-// run beam search
-vector<unsigned> log_prob_parser_beam(ComputationGraph* hg,
-                     const vector<unsigned>& raw_sent,  // raw sentence
-                     const vector<unsigned>& sent,  // sent with OOVs replaced
-                     const vector<unsigned>& sentPos,
-                     const vector<string>& setOfActions,
-                     unsigned beam_size, double* log_prob) {
-    abort();
-#if 0
-    vector<unsigned> results;
-    ParserState init;
-
-    stack_lstm.new_graph(hg);
-    buffer_lstm.new_graph(hg);
-    action_lstm.new_graph(hg);
-    // variables in the computation graph representing the parameters
-    Expression pbias = parameter(*hg, p_pbias);
-    Expression H = parameter(*hg, p_H);
-    Expression D = parameter(*hg, p_D);
-    Expression R = parameter(*hg, p_R);
-    Expression cbias = parameter(*hg, p_cbias);
-    Expression S = parameter(*hg, p_S);
-    Expression B = parameter(*hg, p_B);
-    Expression A = parameter(*hg, p_A);
-    Expression ib = parameter(*hg, p_ib);
-    Expression w2l = parameter(*hg, p_w2l);
-    Expression p2l;
-    if (USE_POS)
-      i_p2l = parameter(*hg, p_p2l);
-    Expression t2l;
-    if (p_t2l)
-      i_t2l = parameter(*hg, p_t2l);
-    Expression p2a = parameter(*hg, p_p2a);
-    Expression abias = parameter(*hg, p_abias);
-    Expression action_start = parameter(*hg, p_action_start);
-
-    action_lstm.add_input(i_action_start, hg);
-
-    vector<Expression> buffer(sent.size() + 1);  // variables representing word embeddings (possibly including POS info)
-    vector<int> bufferi(sent.size() + 1);  // position of the words in the sentence
-
-    // precompute buffer representation from left to right
-    for (unsigned i = 0; i < sent.size(); ++i) {
-      assert(sent[i] < VOCAB_SIZE);
-      Expression w = lookup(*hg, p_w, sent[i]);
-      Expression i;
-      if (USE_POS) {
-        Expression p = lookup(*hg, p_p, sentPos[i]);
-        i_i = hg->add_function<AffineTransform>({i_ib, i_w2l, i_w, i_p2l, i_p});
-      } else {
-        i_i = hg->add_function<AffineTransform>({i_ib, i_w2l, i_w});
-      }
-      if (p_t && pretrained.count(raw_sent[i])) {
-        Expression t = hg->add_const_lookup(p_t, sent[i]);
-        i_i = hg->add_function<AffineTransform>({i_i, i_t2l, i_t});
-      }
-      Expression inl = hg->add_function<Rectify>({i_i});
-      buffer[sent.size() - i] = i_inl;
-      bufferi[sent.size() - i] = i;
-    }
-    // dummy symbol to represent the empty buffer
-    buffer[0] = parameter(*hg, p_buffer_guard);
-    bufferi[0] = -999;
-    for (auto& b : buffer)
-      buffer_lstm.add_input(b, hg);
-
-    vector<Expression> stack;  // variables representing subtree embeddings
-    vector<int> stacki; // position of words in the sentence of head of subtree
-    stack.push_back(parameter(*hg, p_stack_guard));
-    stacki.push_back(-999); // not used for anything
-    // drive dummy symbol on stack through LSTM
-    stack_lstm.add_input(stack.back(), hg);
-
-    init.stack_lstm = stack_lstm;
-    init.buffer_lstm = buffer_lstm;
-    init.action_lstm = action_lstm;
-    init.buffer = buffer;
-    init.bufferi = bufferi;
-    init.stack = stack;
-    init.stacki = stacki;
-    init.results = results;
-    init.score = 0;
-    if (init.stacki.size() ==1 && init.bufferi.size() == 1) { assert(!"bad0"); }
-
-    vector<ParserState> pq;
-    pq.push_back(init);
-    vector<ParserState> completed;
-    while (pq.size() > 0) {
-      const ParserState cur = pq.back();
-      pq.pop_back();
-      if (cur.stack.size() == 2 && cur.buffer.size() == 1) {
-        completed.push_back(cur);
-        if (completed.size() == beam_size) break;
-        continue;
-      }
-
-      // get list of possible actions for the current parser state
-      vector<unsigned> current_valid_actions;
-      for (auto a: possible_actions) {
-        if (IsActionForbidden(setOfActions[a], cur.buffer.size(), cur.stack.size(), stacki))
-          continue;
-        current_valid_actions.push_back(a);
-      }
-
-      // p_t = pbias + S * slstm + B * blstm + A * almst
-      Expression p_t = hg->add_function<AffineTransform>({i_pbias, i_S, cur.stack_lstm.back(), i_B, cur.buffer_lstm.back(), i_A, cur.action_lstm.back()});
-
-      // nlp_t = tanh(p_t)
-      Expression nlp_t = hg->add_function<Rectify>({i_p_t});
-
-      // r_t = abias + p2a * nlp
-      Expression r_t = hg->add_function<AffineTransform>({i_abias, i_p2a, i_nlp_t});
-
-      //cerr << "CVAs: " << current_valid_actions.size() << " (cur.buf=" << cur.bufferi.size() << " buf.sta=" << cur.stacki.size() << ")\n";
-      // adist = log_softmax(r_t)
-      hg->add_function<RestrictedLogSoftmax>({i_r_t}, current_valid_actions);
-      vector<float> adist = as_vector(hg->incremental_forward());
-
-      for (auto action : current_valid_actions) {
-        pq.resize(pq.size() + 1);
-        ParserState& ns = pq.back();
-        ns = cur;  // copy current state to new state
-        ns.score += adist[action];
-        ns.results.push_back(action);
-
-        // add current action to action LSTM
-        Expression action = lookup(*hg, p_a, action);
-        ns.action_lstm.add_input(i_action, hg);
-
-        // do action
-        const string& actionString=setOfActions[action];
-        //cerr << "A=" << actionString << " Bsize=" << buffer.size() << " Ssize=" << stack.size() << endl;
-        const char ac = actionString[0];
-        if (ac =='S') {  // SHIFT
-          assert(ns.buffer.size() > 1); // dummy symbol means > 1 (not >= 1)
-          ns.stack.push_back(ns.buffer.back());
-          ns.stack_lstm.add_input(ns.buffer.back(), hg);
-          ns.buffer.pop_back();
-          ns.buffer_lstm.rewind_one_step();
-          ns.stacki.push_back(cur.bufferi.back());
-          ns.bufferi.pop_back();
-        } else { // LEFT or RIGHT
-          assert(ns.stack.size() > 2); // dummy symbol means > 2 (not >= 2)
-          assert(ac == 'L' || ac == 'R');
-          Expression dep, head;
-          unsigned depi = 0, headi = 0;
-          (ac == 'R' ? dep : head) = ns.stack.back();
-          (ac == 'R' ? depi : headi) = ns.stacki.back();
-          ns.stack.pop_back();
-          ns.stacki.pop_back();
-          (ac == 'R' ? head : dep) = ns.stack.back();
-          (ac == 'R' ? headi : depi) = ns.stacki.back();
-          ns.stack.pop_back();
-          ns.stacki.pop_back();
-          // get relation embedding from action (TODO: convert to relation from action?)
-          Expression relation = lookup(*hg, p_r, action);
-
-          // composed = cbias + H * head + D * dep + R * relation
-        Expression composed = (ac == 'L') ? affine_transform({cbias, H, head, D, dep, Rl, relation}) :
-                                            affine_transform({cbias, H, head, D, dep, Rr, relation});
-          // nlcomposed = tanh(composed)
-          Expression nlcomposed = tanh(composed);
-          ns.stack_lstm.rewind_one_step();
-          ns.stack_lstm.rewind_one_step();
-          ns.stack_lstm.add_input(i_nlcomposed, hg);
-          ns.stack.push_back(i_nlcomposed);
-          ns.stacki.push_back(headi);
-        }
-      } // all curent actions
-      prune(pq, beam_size);
-    } // beam search
-    assert(completed.size() > 0);
-    prune(completed, 1);
-    results = completed.back().results;
-    assert(completed.back().stack.size() == 2); // guard symbol, root
-    assert(completed.back().stacki.size() == 2);
-    assert(completed.back().buffer.size() == 1); // guard symbol
-    assert(completed.back().bufferi.size() == 1);
-    *log_prob = completed.back().score;
-
-
-    return results;
-#endif
-  }
 };
 
 void signal_callback_handler(int /* signum */) {
@@ -1346,11 +1064,13 @@ unsigned compute_correct(const map<int,int>& ref, const map<int,int>& hyp, unsig
   return res;
 }
 
-void output_conll(const vector<unsigned>& sentence, const vector<unsigned>& pos,
-                  const vector<string>& sentenceUnkStrings, 
-                  const map<unsigned, string>& intToWords, 
-                  const map<unsigned, string>& intToPos, 
-                  const map<int,int>& hyp, const map<int,string>& rel_hyp) {
+void output_conll(const vector<unsigned>& sentence, //
+                  const vector<unsigned>& pos, //
+                  const vector<string>& sentenceUnkStrings, //
+                  const map<unsigned, string>& intToWords, //
+                  const map<unsigned, string>& intToPos, //
+                  const map<int,int>& hyp, //
+                  const map<int,string>& rel_hyp) {
   for (unsigned i = 0; i < (sentence.size()-1); ++i) {
     auto index = i + 1;
     assert(i < sentenceUnkStrings.size() && 
@@ -1415,7 +1135,6 @@ int main(int argc, char** argv) {
   LSTM_INPUT_DIM = conf["lstm_input_dim"].as<unsigned>();
   POS_DIM = conf["pos_dim"].as<unsigned>();
   REL_DIM = conf["rel_dim"].as<unsigned>();
-  const unsigned beam_size = conf["beam_size"].as<unsigned>();
   const unsigned unk_strategy = conf["unk_strategy"].as<unsigned>();
   cerr << "Unknown word strategy: ";
   if (unk_strategy == 1) {
@@ -1449,7 +1168,6 @@ int main(int argc, char** argv) {
   corpus.load_train(conf["training_data"].as<string>(), conf["actions_list"].as<string>());
   const unsigned kUNK = corpus.get_or_add_word(cpyp::Corpus::UNK);
   kROOT_SYMBOL = corpus.get_or_add_word(ROOT_SYMBOL);
-  //cout <<"KROOT:"<<kROOT_SYMBOL<<"\n";
 
   if (conf.count("words")) {
     pretrained[kUNK] = vector<float>(PRETRAINED_DIM, 0);
@@ -1485,7 +1203,6 @@ int main(int argc, char** argv) {
   if (corpus.nchars>255) CHAR_SIZE=corpus.nchars;
 
   ACTION_SIZE = corpus.nactions + 1;
-  //POS_SIZE = corpus.npos + 1;
   POS_SIZE = corpus.npos + 10;
   possible_actions.resize(corpus.nactions);
   for (unsigned i = 0; i < corpus.nactions; ++i)
@@ -1550,7 +1267,6 @@ int main(int argc, char** argv) {
           double lp = as_scalar(hg.incremental_forward());
           if (lp < 0) {
               cerr << "Log prob < 0 on sentence " << order[si] << ": lp=" << lp << endl;
-              //assert(lp >= 0.0);
           }
           if (lp >= 0) {
               hg.backward();
@@ -1568,7 +1284,6 @@ int main(int argc, char** argv) {
       ++logc;
       if (logc % 25 == 1) { // report on dev set
           unsigned dev_size = corpus.nsentencesDev;
-          // dev_size = 100;
           double llh = 0;
           double trs = 0;
           double right = 0;
@@ -1621,6 +1336,7 @@ int main(int argc, char** argv) {
       }
     }
   } // should do training?
+
   if (true) { // do test evaluation
     double llh = 0;
     double trs = 0;
